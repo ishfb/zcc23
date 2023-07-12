@@ -91,3 +91,12 @@ struct EstimationBuilder {
     return value;
   }
 };
+
+??? delivery_duration_expr;
+if (SomeCondition()) {
+  delivery_duration_expr = V(fallback.delivery_duration);
+} else {
+  delivery_duration_expr = V(arrival_to_customer_at) - V(delivery_started_at);
+}
+
+eta.delivery_duration = esb.Build(Max(delivery_duration_expr, V(0s)));
