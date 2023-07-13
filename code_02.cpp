@@ -92,7 +92,7 @@ struct EstimationBuilder {
   }
 };
 
-??? delivery_duration_expr;
+? ? ? delivery_duration_expr;
 if (SomeCondition()) {
   delivery_duration_expr = V(fallback.delivery_duration);
 } else {
