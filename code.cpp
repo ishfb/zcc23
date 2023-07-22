@@ -21,6 +21,11 @@ std::string ToString(const std::chrono::duration<Rep, Period>& value);
 
 bool SomeCondition();
 
+template <typename T, typename U>
+auto MaxImpl(const T& lhs, const U& rhs) {
+  return lhs > rhs ? lhs : rhs;
+}
+
 struct Estimated {
   Timepoint value;
   string formula;
@@ -138,7 +143,7 @@ public:
   MaxExpr(const Expression<T>& lhs, const Expression<U>& rhs)
       : lhs(lhs.AsChild()), rhs(rhs.AsChild()) {}
 
-  auto Evaluate() const { return std::max(lhs.Evaluate(), rhs.Evaluate()); }
+  auto Evaluate() const { return MaxImpl(lhs.Evaluate(), rhs.Evaluate()); }
 
   void FillVariablesTo(
       std::unordered_map<std::string, std::string>& variables) const {
@@ -290,7 +295,8 @@ operator+(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
 }
 
 // // clang-format off
-// template <typename T, typename U> class MaxExpr : public Expression<Sum<T, U>> {
+// template <typename T, typename U> class MaxExpr : public Expression<Sum<T,
+// U>> {
 //   // clang-format on
 // private:
 //   const T& lhs;
@@ -341,12 +347,43 @@ public:
   }
 };
 
-template <typename U, typename T, typename V, typename W>
-std::enable_if_t<std::is_base_of_v<Expression<U>, T> &&
-                     std::is_base_of_v<Expression<V>, W>,
+template <typename U, template <class> typename T, typename V,
+          template <class> typename W>
+std::enable_if_t<std::is_base_of_v<Expression<U>, T<U>> &&
+                     std::is_base_of_v<Expression<V>, W<V>>,
                  shared_ptr<Diff<U, V>>>
-operator-(shared_ptr<T> lhs, shared_ptr<W> rhs) {
+operator-(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
   return std::make_shared<Diff<U, V>>(std::move(lhs), std::move(rhs));
+}
+
+template <typename T, typename U>
+using MaxType_t = decltype(MaxImpl(declval<T>(), std::declval<U>()));
+
+template <typename T, typename U>
+class MaxOp : public BinaryOp<T, U, DiffType_t<T, U>> {
+public:
+  using BinaryOp<T, U, DiffType_t<T, U>>::BinaryOp;
+
+  MaxType_t<T, U> Evaluate() const override {
+    return MaxImpl(this->lhs_->Evaluate(), this->rhs_->Evaluate());
+  }
+
+  void FillFormulaTo(std::ostream& output) const override {
+    output << "max(";
+    this->lhs_->FillFormulaTo(output);
+    output << ", ";
+    this->rhs_->FillFormulaTo(output);
+    output << ')';
+  }
+};
+
+template <typename U, template <class> typename T, typename V,
+          template <class> typename W>
+std::enable_if_t<std::is_base_of_v<Expression<U>, T<U>> &&
+                     std::is_base_of_v<Expression<V>, W<V>>,
+                 shared_ptr<MaxOp<U, V>>>
+Max(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
+  return std::make_shared<MaxOp<U, V>>(std::move(lhs), std::move(rhs));
 }
 
 #define V(x) MakeValue(x, #x)
@@ -355,18 +392,17 @@ Estimated CalcCompleteAt(const EstimationData& eta) {
   return *(V(eta.delivery_started_at) + V(eta.delivery_duration));
 }
 
-// Estimated UsesSubexpression(const EstimationData& eta) {
-//   std::shared_ptr<Expression<Timepoint>> delivery_duration_expr;
-//   if (SomeCondition()) {
-//     delivery_duration_expr = V(eta.fallback_delivery_duration);
-//   } else {
-//     delivery_duration_expr =
-//         V(eta.arrival_to_customer_at) - V(eta.delivery_started_at);
-//   }
+Estimated UsesSubexpression(const EstimationData& eta) {
+  std::shared_ptr<Expression<Timepoint>> delivery_duration_expr;
+  if (SomeCondition()) {
+    delivery_duration_expr = V(eta.arrival_to_customer_at);
+  } else {
+    delivery_duration_expr =
+        V(eta.delivery_started_at) + V(eta.fallback_delivery_duration);
+  }
 
-//   // return *Max(delivery_duration_expr, V(0s));
-//   return *delivery_duration_expr;
-// }
+  return *(delivery_duration_expr + V(eta.fallback_delivery_duration));
+}
 
 #undef V
 
@@ -375,6 +411,8 @@ Estimated CalcCompleteAt(const EstimationData& eta) {
 int main(int arc, char* argv[]) {
   const EstimationData eta{
       .delivery_started_at = chrono::system_clock::now() - chrono::hours(2),
+      .arrival_to_customer_at =
+          chrono::system_clock::now() - chrono::minutes(120 - 40),
       .delivery_duration = chrono::minutes(40),
       .fallback_delivery_duration = chrono::minutes(20),
   };
@@ -395,6 +433,10 @@ int main(int arc, char* argv[]) {
   {
     cout << "3rd attempt:\n";
     auto estimated = third_attempt::CalcCompleteAt(eta);
+    cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    auto estimated = third_attempt::UsesSubexpression(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
   }
 }
