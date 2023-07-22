@@ -19,6 +19,8 @@ string ToString(Timepoint);
 template <typename Rep, typename Period>
 std::string ToString(const std::chrono::duration<Rep, Period>& value);
 
+bool SomeCondition();
+
 struct Estimated {
   Timepoint value;
   string formula;
@@ -169,8 +171,6 @@ Estimated CalcCompleteAtWithMax(const EstimationData& eta) {
   return V(eta.delivery_started_at) + Max(V(eta.delivery_duration), V(0s));
 }
 
-bool SomeCondition();
-
 // Estimated DoesntCompile(const EstimationData& eta) {
 //   unknown delivery_duration_expr;
 //   if (SomeCondition()) {
@@ -183,8 +183,6 @@ bool SomeCondition();
 //   return Max(delivery_duration_expr, V(0s));
 // }
 
-bool SomeCondition() { return true; }
-
 #undef V
 
 }  // namespace second_attempt
@@ -193,7 +191,7 @@ namespace third_attempt {
 
 // clang-format off
 template <typename T> class Expression {
-// clang-format on
+  // clang-format on
 public:
   virtual ~Expression() = default;
 
@@ -214,11 +212,17 @@ public:
     FillFormulaTo(output);
     return output.str();
   }
+
+  operator Estimated() const {
+    return Estimated{.value = this->Evaluate(),
+                     .formula = this->GetFormula(),
+                     .variables = this->GetVariables()};
+  }
 };
 
 // clang-format off
 template <typename T> struct Value : Expression<T> {
-// clang-format on
+  // clang-format on
   const T& value;
   std::string name;
 
@@ -236,37 +240,43 @@ template <typename T> struct Value : Expression<T> {
 
 // clang-format off
 template <typename T> auto MakeValue(const T& x, std::string_view name) {
-// clang-format on
+  // clang-format on
   return std::make_shared<Value<T>>(x, name);
 }
 
-template <typename T, typename U>
-using SumType_t = decltype(std::declval<T>() + std::declval<U>());
-
-template <typename T, typename U>
-class Sum : public Expression<SumType_t<T, U>> {
-private:
+template <typename T, typename U, typename OpType>
+class BinaryOp : public Expression<OpType> {
+protected:
   shared_ptr<Expression<T>> lhs_;
   shared_ptr<Expression<U>> rhs_;
 
 public:
-  Sum(shared_ptr<Expression<T>> lhs, shared_ptr<Expression<U>> rhs)
+  BinaryOp(shared_ptr<Expression<T>> lhs, shared_ptr<Expression<U>> rhs)
       : lhs_(std::move(lhs)), rhs_(std::move(rhs)) {}
-
-  SumType_t<T, U> Evaluate() const override {
-    return lhs_->Evaluate() + rhs_->Evaluate();
-  }
 
   void FillVariablesTo(
       std::unordered_map<std::string, std::string>& variables) const override {
     lhs_->FillVariablesTo(variables);
     rhs_->FillVariablesTo(variables);
   }
+};
+
+template <typename T, typename U>
+using SumType_t = decltype(std::declval<T>() + std::declval<U>());
+
+template <typename T, typename U>
+class Sum : public BinaryOp<T, U, SumType_t<T, U>> {
+public:
+  using BinaryOp<T, U, SumType_t<T, U>>::BinaryOp;
+
+  SumType_t<T, U> Evaluate() const override {
+    return this->lhs_->Evaluate() + this->rhs_->Evaluate();
+  }
 
   void FillFormulaTo(std::ostream& output) const override {
-    lhs_->FillFormulaTo(output);
+    this->lhs_->FillFormulaTo(output);
     output << " + ";
-    rhs_->FillFormulaTo(output);
+    this->rhs_->FillFormulaTo(output);
   }
 };
 
@@ -312,24 +322,41 @@ operator+(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
 //   return MaxExpr(lhs, rhs);
 // }
 
-template <typename T>
-Estimated BuildEstimated(std::shared_ptr<Expression<T>> expr) {
-  return Estimated{.value = expr->Evaluate(),
-                     .formula = expr->GetFormula(),
-                     .variables = expr->GetVariables()};
+template <typename T, typename U>
+using DiffType_t = decltype(std::declval<T>() - std::declval<U>());
+
+template <typename T, typename U>
+class Diff : public BinaryOp<T, U, DiffType_t<T, U>> {
+public:
+  using BinaryOp<T, U, DiffType_t<T, U>>::BinaryOp;
+
+  DiffType_t<T, U> Evaluate() const override {
+    return this->lhs_->Evaluate() + this->rhs_->Evaluate();
+  }
+
+  void FillFormulaTo(std::ostream& output) const override {
+    this->lhs_->FillFormulaTo(output);
+    output << " - ";
+    this->rhs_->FillFormulaTo(output);
+  }
+};
+
+template <typename U, typename T, typename V, typename W>
+std::enable_if_t<std::is_base_of_v<Expression<U>, T> &&
+                     std::is_base_of_v<Expression<V>, W>,
+                 shared_ptr<Diff<U, V>>>
+operator-(shared_ptr<T> lhs, shared_ptr<W> rhs) {
+  return std::make_shared<Diff<U, V>>(std::move(lhs), std::move(rhs));
 }
 
-#define V(x) \
-  MakeValue (x, #x)
+#define V(x) MakeValue(x, #x)
 
 Estimated CalcCompleteAt(const EstimationData& eta) {
-  return BuildEstimated(V(eta.delivery_started_at) + V(eta.delivery_duration));
+  return *(V(eta.delivery_started_at) + V(eta.delivery_duration));
 }
 
-bool SomeCondition();
-
-// Estimated DoesntCompile(const EstimationData& eta) {
-//   unknown delivery_duration_expr;
+// Estimated UsesSubexpression(const EstimationData& eta) {
+//   std::shared_ptr<Expression<Timepoint>> delivery_duration_expr;
 //   if (SomeCondition()) {
 //     delivery_duration_expr = V(eta.fallback_delivery_duration);
 //   } else {
@@ -337,10 +364,9 @@ bool SomeCondition();
 //         V(eta.arrival_to_customer_at) - V(eta.delivery_started_at);
 //   }
 
-//   return Max(delivery_duration_expr, V(0s));
+//   // return *Max(delivery_duration_expr, V(0s));
+//   return *delivery_duration_expr;
 // }
-
-bool SomeCondition() { return true; }
 
 #undef V
 
@@ -353,15 +379,22 @@ int main(int arc, char* argv[]) {
       .fallback_delivery_duration = chrono::minutes(20),
   };
   {
+    cout << "1st attempt:\n";
     auto estimated = first_attempt::CalcCompleteAt(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
   }
   {
+    cout << "2nd attempt:\n";
     auto estimated = second_attempt::CalcCompleteAt(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
   }
   {
     auto estimated = second_attempt::CalcCompleteAtWithMax(eta);
+    cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    cout << "3rd attempt:\n";
+    auto estimated = third_attempt::CalcCompleteAt(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
   }
 }
@@ -373,3 +406,5 @@ std::string ToString(const std::chrono::duration<Rep, Period>& value) {
   return std::format(
       "{}s", std::chrono::duration_cast<std::chrono::seconds>(value).count());
 }
+
+bool SomeCondition() { return true; }
