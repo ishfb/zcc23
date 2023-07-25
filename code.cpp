@@ -481,6 +481,46 @@ Estimated ComplexExpressions(const EstimationData& eta) {
 
 }  // namespace fourth_attempt
 
+namespace expression_templates {
+struct Node {
+  string_view value;
+
+  constexpr Node(string_view s) : value(s) {}
+
+  constexpr size_t Size() const { return value.size(); }
+
+  void AssignTo(string& dest) const { dest += value; }
+};
+
+template <typename T, typename U>
+struct StrSum {
+  const T& lhs;
+  const U& rhs;
+
+  constexpr StrSum(const T& lhs, const U& rhs) : lhs(lhs), rhs(rhs) {}
+
+  constexpr size_t Size() const { return lhs.Size() + rhs.Size(); }
+
+  operator string() const {
+    string result;
+    result.reserve(this->Size());
+    AssignTo(result);
+    return result;
+  }
+
+  void AssignTo(string& dest) const {
+    lhs.AssignTo(dest);
+    rhs.AssignTo(dest);
+  }
+};
+
+template <typename T>
+constexpr StrSum<T, Node> operator + (const T& lhs, const Node& rhs) {
+  return {lhs, rhs};
+}
+
+}  // namespace expression_templates
+
 int main(int arc, char* argv[]) {
   const EstimationData eta{
       .delivery_started_at = chrono::system_clock::now() - chrono::hours(2),
@@ -524,6 +564,11 @@ int main(int arc, char* argv[]) {
   {
     auto estimated = fourth_attempt::ComplexExpressions(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    using namespace expression_templates;
+    string hello = Node("Hello") + Node(", ") + Node("world") + Node("!\n");
+    cout << hello; 
   }
 }
 
