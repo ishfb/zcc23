@@ -165,8 +165,9 @@ auto Max(const Expression<T>& lhs, const Expression<U>& rhs) {
   return MaxExpr(lhs, rhs);
 }
 
-#define V(x) \
-  Value { (x), #x }
+// clang-format off
+#define V(x) Value {(x), #x}
+// clang-format on
 
 Estimated CalcCompleteAt(const EstimationData& eta) {
   return V(eta.delivery_started_at) + V(eta.delivery_duration);
@@ -352,7 +353,9 @@ Max(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
   return std::make_shared<MaxOp<U, V>>(std::move(lhs), std::move(rhs));
 }
 
+// clang-format off
 #define V(x) MakeValue(x, #x)
+// clang-format on
 
 Estimated CalcCompleteAt(const EstimationData& eta) {
   return *(V(eta.delivery_started_at) + V(eta.delivery_duration));
@@ -377,6 +380,106 @@ Estimated UsesSubexpression(const EstimationData& eta) {
 #undef V
 
 }  // namespace third_attempt
+
+namespace fourth_attempt {
+
+// clang-format off
+template <typename T> struct Value {
+  // clang-format on
+  T value;
+  std::string formula;
+  std::unordered_map<std::string, std::string> variables;
+
+  Value(T value, std::string_view name)
+      : value(value), formula(name), variables({{formula, ToString(value)}}) {}
+
+  Value(T value, std::string formula,
+        std::unordered_map<std::string, std::string> variables)
+      : value(value),
+        formula(std::move(formula)),
+        variables(std::move(variables)) {}
+
+  template <typename U>
+  Value(Value<U>&& that,
+        std::enable_if_t<std::is_convertible_v<U, T>, void*> = nullptr)
+      : value(that.value),
+        formula(std::move(that.formula)),
+        variables(std::move(that.variables)) {}
+
+  operator Estimated() && {
+    return Estimated{.value = this->value,
+                     .formula = std::move(this->formula),
+                     .variables = std::move(this->variables)};
+  }
+};
+
+template <typename T, typename U>
+auto operator+(Value<T> lhs, Value<U> rhs) {
+  lhs.formula += " + ";
+  lhs.formula += rhs.formula;
+  lhs.variables.merge(rhs.variables);
+  return Value{lhs.value + rhs.value, std::move(lhs.formula),
+               std::move(lhs.variables)};
+}
+
+template <typename T, typename U>
+auto operator-(Value<T> lhs, Value<U> rhs) {
+  lhs.formula += " - ";
+  lhs.formula += rhs.formula;
+  lhs.variables.merge(rhs.variables);
+  return Value{lhs.value - rhs.value, std::move(lhs.formula),
+               std::move(lhs.variables)};
+}
+
+template <typename T, typename U>
+auto Max(Value<T> lhs, Value<U> rhs) {
+  std::string formula = std::move(lhs.formula);
+  formula += "max(";
+  std::rotate(formula.begin(), formula.end() - 4, formula.end());
+  formula += ", ";
+  formula += rhs.formula;
+  formula += ')';
+
+  lhs.variables.merge(rhs.variables);
+  return Value{MaxImpl(lhs.value, rhs.value), std::move(formula),
+               std::move(lhs.variables)};
+}
+
+// clang-format off
+#define V(x) Value {x, #x}
+// clang-format on
+
+Estimated CalcCompleteAt(const EstimationData& eta) {
+  return V(eta.delivery_started_at) + V(eta.delivery_duration);
+}
+
+Estimated UsesSubexpression(const EstimationData& eta) {
+  const Value<Timepoint> delivery_duration_expr = [&] {
+    if (SomeCondition()) {
+      return V(eta.arrival_to_customer_at);
+    } else {
+      return V(eta.delivery_started_at) + V(eta.fallback_delivery_duration);
+    }
+  }();
+
+  return delivery_duration_expr + V(eta.fallback_delivery_duration);
+}
+
+Estimated ComplexExpressions(const EstimationData& eta) {
+  const Value<Timepoint> delivery_duration_expr = [&] {
+    if (SomeCondition()) {
+      return V(eta.arrival_to_customer_at);
+    } else {
+      return V(eta.delivery_started_at) + V(eta.fallback_delivery_duration);
+    }
+  }();
+
+  const auto now = chrono::system_clock::now();
+  return Max(delivery_duration_expr + V(eta.fallback_delivery_duration),
+             V(now) + V(eta.fallback_delivery_duration) + V(0s));
+}
+
+}  // namespace fourth_attempt
 
 int main(int arc, char* argv[]) {
   const EstimationData eta{
@@ -407,6 +510,19 @@ int main(int arc, char* argv[]) {
   }
   {
     auto estimated = third_attempt::UsesSubexpression(eta);
+    cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    cout << "4th attempt:\n";
+    auto estimated = fourth_attempt::CalcCompleteAt(eta);
+    cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    auto estimated = fourth_attempt::UsesSubexpression(eta);
+    cout << estimated.formula << " = " << ToString(estimated.value) << endl;
+  }
+  {
+    auto estimated = fourth_attempt::ComplexExpressions(eta);
     cout << estimated.formula << " = " << ToString(estimated.value) << endl;
   }
 }
