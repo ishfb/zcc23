@@ -294,40 +294,6 @@ operator+(shared_ptr<T<U>> lhs, shared_ptr<W<V>> rhs) {
   return std::make_shared<Sum<U, V>>(std::move(lhs), std::move(rhs));
 }
 
-// // clang-format off
-// template <typename T, typename U> class MaxExpr : public Expression<Sum<T,
-// U>> {
-//   // clang-format on
-// private:
-//   const T& lhs;
-//   const U& rhs;
-
-// public:
-//   MaxExpr(const Expression<T>& lhs, const Expression<U>& rhs)
-//       : lhs(lhs.AsChild()), rhs(rhs.AsChild()) {}
-
-//   auto Evaluate() const { return std::max(lhs.Evaluate(), rhs.Evaluate()); }
-
-//   void FillVariablesTo(
-//       std::unordered_map<std::string, std::string>& variables) const {
-//     lhs.FillVariablesTo(variables);
-//     rhs.FillVariablesTo(variables);
-//   }
-
-//   void FillFormulaTo(std::ostream& output) const {
-//     output << "max(";
-//     lhs.FillFormulaTo(output);
-//     output << ", ";
-//     rhs.FillFormulaTo(output);
-//     output << ')';
-//   }
-// };
-
-// template <typename T, typename U>
-// auto Max(const Expression<T>& lhs, const Expression<U>& rhs) {
-//   return MaxExpr(lhs, rhs);
-// }
-
 template <typename T, typename U>
 using DiffType_t = decltype(std::declval<T>() - std::declval<U>());
 
@@ -403,6 +369,10 @@ Estimated UsesSubexpression(const EstimationData& eta) {
 
   return *(delivery_duration_expr + V(eta.fallback_delivery_duration));
 }
+
+// Estimated DoesntCompile(const EstimationData& eta) {
+//   return *(V(eta.delivery_started_at) + V(eta.delivery_duration) + V(0s));
+// }
 
 #undef V
 
