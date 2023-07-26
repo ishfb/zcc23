@@ -62,26 +62,30 @@ template <typename T> class Expression {
 public:
   auto Evaluate() const { return AsChild().Evaluate(); }
 
-  std::unordered_map<std::string, std::string> GetVariables() const {
-    std::unordered_map<std::string, std::string> variables;
-    AsChild().FillVariablesTo(variables);
-    return variables;
-  }
-
-  std::string GetFormula() const {
-    std::ostringstream output;
-    AsChild().FillFormulaTo(output);
-    return output.str();
-  }
-
+  std::unordered_map<std::string, std::string> GetVariables() const;
+  std::string GetFormula() const;
+  const T& AsChild() const { return static_cast<const T&>(*this); }
   operator Estimated() const {
     return Estimated{.value = this->Evaluate(),
                      .formula = this->GetFormula(),
                      .variables = this->GetVariables()};
   }
-
-  const T& AsChild() const { return static_cast<const T&>(*this); }
 };
+
+template <typename T>
+std::unordered_map<std::string, std::string> Expression<T>::GetVariables()
+    const {
+  std::unordered_map<std::string, std::string> variables;
+  AsChild().FillVariablesTo(variables);
+  return variables;
+}
+
+template <typename T>
+std::string Expression<T>::GetFormula() const {
+  std::ostringstream output;
+  AsChild().FillFormulaTo(output);
+  return output.str();
+}
 
 // clang-format off
 template <typename T> struct Value : Expression<Value<T>> {
@@ -115,21 +119,27 @@ public:
   auto Evaluate() const { return lhs.Evaluate() + rhs.Evaluate(); }
 
   void FillVariablesTo(
-      std::unordered_map<std::string, std::string>& variables) const {
-    lhs.FillVariablesTo(variables);
-    rhs.FillVariablesTo(variables);
-  }
-
-  void FillFormulaTo(std::ostream& output) const {
-    lhs.FillFormulaTo(output);
-    output << " + ";
-    rhs.FillFormulaTo(output);
-  }
+      std::unordered_map<std::string, std::string>& variables) const;
+  void FillFormulaTo(std::ostream& output) const;
 };
 
 template <typename T, typename U>
 auto operator+(const Expression<T>& lhs, const Expression<U>& rhs) {
   return Sum(lhs, rhs);
+}
+
+template <typename T, typename U>
+void Sum<T, U>::FillVariablesTo(
+    std::unordered_map<std::string, std::string>& variables) const {
+  lhs.FillVariablesTo(variables);
+  rhs.FillVariablesTo(variables);
+}
+
+template <typename T, typename U>
+void Sum<T, U>::FillFormulaTo(std::ostream& output) const {
+  lhs.FillFormulaTo(output);
+  output << " + ";
+  rhs.FillFormulaTo(output);
 }
 
 // clang-format off
@@ -171,6 +181,12 @@ auto Max(const Expression<T>& lhs, const Expression<U>& rhs) {
 
 Estimated CalcCompleteAt(const EstimationData& eta) {
   return V(eta.delivery_started_at) + V(eta.delivery_duration);
+}
+
+Estimated CalcCompleteAtExplicit(const EstimationData& eta) {
+  Estimated result = Value(eta.delivery_started_at, "delivery_started_at") +
+                     Value(eta.delivery_duration, "eta.delivery_duration");
+  return result;
 }
 
 Estimated CalcCompleteAtWithMax(const EstimationData& eta) {
@@ -515,7 +531,7 @@ struct StrSum {
 };
 
 template <typename T>
-constexpr StrSum<T, Node> operator + (const T& lhs, const Node& rhs) {
+constexpr StrSum<T, Node> operator+(const T& lhs, const Node& rhs) {
   return {lhs, rhs};
 }
 
@@ -568,7 +584,7 @@ int main(int arc, char* argv[]) {
   {
     using namespace expression_templates;
     string hello = Node("Hello") + Node(", ") + Node("world") + Node("!\n");
-    cout << hello; 
+    cout << hello;
   }
 }
 
