@@ -213,27 +213,17 @@ namespace third_attempt {
 
 // clang-format off
 template <typename T> class Expression {
-  // clang-format on
+// clang-format on
 public:
   virtual ~Expression() = default;
-
   virtual T Evaluate() const = 0;
 
   virtual void FillVariablesTo(
       std::unordered_map<std::string, std::string>& variables) const = 0;
   virtual void FillFormulaTo(std::ostream& output) const = 0;
 
-  std::unordered_map<std::string, std::string> GetVariables() const {
-    std::unordered_map<std::string, std::string> variables;
-    FillVariablesTo(variables);
-    return variables;
-  }
-
-  virtual std::string GetFormula() const {
-    std::ostringstream output;
-    FillFormulaTo(output);
-    return output.str();
-  }
+  std::unordered_map<std::string, std::string> GetVariables() const;
+  std::string GetFormula() const;
 
   operator Estimated() const {
     return Estimated{.value = this->Evaluate(),
@@ -241,6 +231,21 @@ public:
                      .variables = this->GetVariables()};
   }
 };
+
+template <typename T>
+std::unordered_map<std::string, std::string> Expression<T>::GetVariables()
+    const {
+  std::unordered_map<std::string, std::string> variables;
+  FillVariablesTo(variables);
+  return variables;
+}
+
+template <typename T>
+std::string Expression<T>::GetFormula() const {
+  std::ostringstream output;
+  FillFormulaTo(output);
+  return output.str();
+}
 
 // clang-format off
 template <typename T> struct Value : Expression<T> {
@@ -256,7 +261,6 @@ template <typename T> struct Value : Expression<T> {
       std::unordered_map<std::string, std::string>& variables) const override {
     variables[name] = ToString(value);
   }
-
   void FillFormulaTo(std::ostream& output) const override { output << name; }
 };
 
@@ -302,8 +306,10 @@ public:
   }
 };
 
-template <typename U, template <class> typename T, typename V,
-          template <class> typename W>
+// clang-format off
+template <typename U, template <class> typename T, 
+          typename V, template <class> typename W>
+// clang-format on
 std::enable_if_t<std::is_base_of_v<Expression<U>, T<U>> &&
                      std::is_base_of_v<Expression<V>, W<V>>,
                  shared_ptr<Sum<U, V>>>
