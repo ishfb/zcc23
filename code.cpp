@@ -395,9 +395,18 @@ Estimated UsesSubexpression(const EstimationData& eta) {
   return *(delivery_duration_expr + V(eta.fallback_delivery_duration));
 }
 
-// Estimated DoesntCompile(const EstimationData& eta) {
-//   return *(V(eta.delivery_started_at) + V(eta.delivery_duration) + V(0s));
+template <typename T>
+void PrintType(T);
+
+// clang-format off
+// Estimated DoesntCompile(
+//     const EstimationData& eta) {
+//   return *(
+//       V(eta.delivery_started_at) +
+//       V(eta.delivery_duration) +
+//       V(0s));
 // }
+// clang-format on
 
 #undef V
 
